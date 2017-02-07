@@ -1,0 +1,720 @@
+!  TELEMACHUS_AG_TEST.CDI  #CMOVER_3.2B WHOLE_LOAN  COUNTRY_CODE EUR  !  MAX_CF_VECTSIZE 930 
+!
+!! Created by Intex Deal Maker v5.2.307  ,  subroutines 3.3i
+!!   02/07/2017   2:36 PM
+!
+!  Modeled in the Intex CMO Modeling Language, (EWR-PV-NYCA032)
+!  which is copyright (c) 2017 by Intex Solutions, Inc.
+!  Intex shall not be held liable for the accuracy of this data
+!  nor for the accuracy of information which is derived from this data.
+!
+!
+  DEFINE CONSTANT #OrigCollBal = 615248694.79
+!
+  DEFINE CONSTANT #OrigBondBal = 615248696.00
+!
+  DEFINE STATIC LOANVAL CLUSTER SEPARATE #Defaulted = UPCASE(ASSET("ASSET_INFO", "DEFAULT_FLAG"))
+  GROUP "PERFORMING" FULLNAME "Performing as of Latest Data" SUBSET ( #Defaulted NE "Y" ); = 0
+  GROUP "DEFAULTED"  FULLNAME "Defaulted as of Latest Data"  SUBSET ( #Defaulted EQ "Y" ); = 0
+  COLLAT_ORIGBAL GROUP "PERFORMING" 615248694.79
+  COLLAT_ORIGBAL GROUP "DEFAULTED" 0.001
+!
+!
+   FULL_DEALNAME:        Telemachus-AG_TEST
+!
+   DEAL SIZE:            615248696.00
+   PRICING SPEED:        0 CPR
+!  ISSUE DATE:           20170201
+   SETTLEMENT DATE:      20170221
+!
+  Record date delay:     20
+!
+  DEFINE STANDARDIZE STEP_UP_DATE FULL_NAME "Step-Up Date" CONSTANT #StepUpDate = 20190521
+!
+ DEFINE TR_INDEXDEPS_ALL
+!
+ DEAL_BUSINESS_CENTER PAB
+!
+ DEAL_CURRENCY EUR
+!
+DEFINE TRANCHE "CAP_IN", "A", "B", "C", "D", "E", "F", "Z", "R"
+!
+DEFINE TRANCHE DISPLAY_ORDER "A", "B", "C", "D", "E", "F", "Z", "R"
+!
+ DEFINE VARNAMES #InitAcctBal, #SpecAcctBal, #InitAcctBal2, #SpecAcctBal2, #Coll_I, #Coll_P, #PDL
+!
+   DEAL_CLOCK_INFO _
+       ISSUE_CDU_DATE             20170201 _
+       DEAL_FIRSTPAY_DATE         20170521 _
+       DEAL_PAYRULE_FREQ          Q
+!
+  DEFINE CLASS "A", "B", "C", "D", "E", "F", "Z"
+!
+  DEFINE EXPENSE "Fees"
+!
+  DEFINE STANDARDIZE EXCESS_INTEREST              #XSSpread      = 0
+  DEFINE STANDARDIZE PDL_AGG GROUP 0 DYNAMIC SLIPPERY #PDL_Agg = #PDL
+  DEFINE STANDARDIZE PDL CLASS "A" FULL_NAME "Class A PDL" DESCRIPTION "Principal Deficiency Ledger for Class A" #A_PDL = 0
+  DEFINE STANDARDIZE PDL CLASS "B" FULL_NAME "Class B PDL" DESCRIPTION "Principal Deficiency Ledger for Class B" #B_PDL = 0
+  DEFINE STANDARDIZE PDL CLASS "C" FULL_NAME "Class C PDL" DESCRIPTION "Principal Deficiency Ledger for Class C" #C_PDL = 0
+  DEFINE STANDARDIZE PDL CLASS "D" FULL_NAME "Class D PDL" DESCRIPTION "Principal Deficiency Ledger for Class D" #D_PDL = 0
+  DEFINE STANDARDIZE PDL CLASS "E" FULL_NAME "Class E PDL" DESCRIPTION "Principal Deficiency Ledger for Class E" #E_PDL = 0
+  DEFINE STANDARDIZE PDL CLASS "F" FULL_NAME "Class F PDL" DESCRIPTION "Principal Deficiency Ledger for Class F" #F_PDL = 0
+  DEFINE STANDARDIZE PDL CLASS "Z" FULL_NAME "Class Z PDL" DESCRIPTION "Principal Deficiency Ledger for Class Z" #Z_PDL = 0
+!
+!
+  DEFINE SETTINGS TREAT_FORBEARANCE_AS_INCLUDED_IN_BALANCE
+!
+  DEFINE DYNAMIC STICKY #NetRateM  = MAX(0, COLL_I_MISC("COUPON")) / COLL_PREV_BAL * 36000 / 90
+  DEFINE DYNAMIC STICKY #NetRate = #NetRateM
+!
+  DEFINE DYNAMIC STICKY #NetRateActual360 = #Netrate * 90 / DAYS_DIFF(CURDATE, MONTHS_ADD(CURDATE,-3))
+!
+  DEFINE CREDIT_ENHANCEMENT "LRF", "GRF"
+!
+SERVICER_ADVANCE NEVER
+!
+TOLERANCE WRITEDOWN_0LOSS 9999999999999.00
+TOLERANCE INTEREST        9999999999999.00
+!
+!
+! 
+!DEFINE DYNAMIC STICKY #NewDefAmt = (COLL("NEW_DEF_AMT") - COLL("NEW_DEF_AMT","DEFAULTED")) 
+!
+   DEFINE #DebitPctCDU = 0 
+   DEFINE #PDLTransfer = 0  
+!
+   DEFINE STANDARDIZE UNKNOWN FULL_NAME "Forecasted Defaulted Assets PDL Debit Percentage" _
+ DESCRIPTION "For mortgage assets forecasted to be in default but not yet written off, this is the percentage of_
+ the principal balance to be applied as a debit to the PDL (Principal Deficiency Ledger). _
+The percentage should be input as a number between 0 and 100. _
+The default value for this variable utilises the most recent Investor Reports to reflect the calculated _
+percentage of the already defaulted assets that have been debited to the PDL, or will be 25% if such data is not available. _
+This percentage of the balance of newly_
+ defaulted assets will be debited to the PDL at the time of default. _
+When the mortgage is Written-Off, if the actual realized loss exceeds the amount debited to the PDL at the time of default,_
+ the additional amount will be applied to the ledger. _
+If the actual realized loss is less than the amount debited at the time of the default, the difference will be credited as an_
+ Available Interest Distribution Amount." _
+ DYNAMIC STICKY #DebitPct = #DebitPctCDU
+! 
+!!!!forecasted defaults
+   DEFINE DYNAMIC STICKY  #DebitPDL1%         = MINMAX(0, #DebitPct, 100)/100
+   DEFINE DYNAMIC STICKY  #Severity1%         = DELINQ_NET_LOSS("PERFORMING") / DELINQ_LIQUIDATE("PERFORMING")
+   DEFINE DYNAMIC STICKY  #DeemedPrincLoss1   = #NewDefAmt * #DebitPDL1%
+   DEFINE DYNAMIC STICKY  #Liquidated1        = DELINQ_LIQUIDATE("PERFORMING") * (#Severity1% - #DebitPDL1%)
+   DEFINE DYNAMIC STICKY  #PDL_Debit1         = #DeemedPrincLoss1 + MAX( 0, #Liquidated1 )
+   DEFINE DYNAMIC STICKY  #PDL_Credit1        = MAX( 0, -1 * #Liquidated1 )
+!
+!
+!!!!already defaulted assets
+   DEFINE DYNAMIC STICKY  #DebitPDLCDU%       = MINMAX(0, #DebitPctCDU, 100)/100
+   DEFINE DYNAMIC STICKY  #Severity2%         = DELINQ_NET_LOSS("DEFAULTED") / DELINQ_LIQUIDATE("DEFAULTED")
+   DEFINE DYNAMIC STICKY  #Liquidated2        = DELINQ_LIQUIDATE("DEFAULTED")  * (#Severity2% - #DebitPDLCDU%)
+   DEFINE DYNAMIC STICKY  #PDL_Debit2         = MAX( 0, #Liquidated2 )
+   DEFINE DYNAMIC STICKY  #PDL_Credit2        = MAX( 0, -1 * #Liquidated2 )
+!
+!
+!
+   DEFINE DYNAMIC STICKY  #Current_PDL_Adj   = #PDL_Debit1 - #PDL_Credit1 + #PDL_Debit2 - #PDL_Credit2  
+!
+  INITIAL INDEX    ECB          -0.491219327761237
+  INITIAL INDEX    EURIBOR_3MO        0.37
+!
+DEFINE SETTINGS CASHFLOW_REINVESTMENT_ALLOWED NO
+!
+!
+Tranche "CAP_IN" PSEUDO HEDGE
+   Block 0.01 FLOAT NOTIONAL WITH FORMULA BEGIN ( If curdate le 20240221 then BBAL("A","B","C","D","E","F") else 0 ); _
+          DAYCOUNT ACTUAL360 BUSINESS_DAY NONE FREQ Q _
+          Delay 0  Dated 20170221  Next 20170521
+     1 * INDEX(EURIBOR_3MO) + (-2)
+     0     999999
+!
+Tranche "A" SEN_FLT ! PAID_DOWN_WHEN (TOTAL_PAYBACK_DUE("A#1") LT 0.01);
+   Block 276861913.00  FREQ Q FLOAT _
+          DAYCOUNT ACTUAL360 BUSINESS_DAY NONE _
+          Delay 0  Dated 20170221  Next 20170521
+     (1 * INDEX(EURIBOR_3MO) + ( IF CURDATE GT #StepUpDate THEN 1.5 ELSE 0.75 ))
+     0     99999999
+!
+Tranche "B" MEZ_FLT ! PAID_DOWN_WHEN (TOTAL_PAYBACK_DUE("B#1") LT 0.01);
+   Block 76906087.00  FREQ Q FLOAT _
+          DAYCOUNT ACTUAL360 BUSINESS_DAY NONE _
+          Delay 0  Dated 20170221  Next 20170521
+     (1 * INDEX(EURIBOR_3MO) + ( IF CURDATE GT #StepUpDate THEN 2. ELSE 1 ))
+     0     99999999
+!
+Tranche "C" MEZ_FLT ! PAID_DOWN_WHEN (TOTAL_PAYBACK_DUE("C#1") LT 0.01);
+   Block 24609948.00  FREQ Q FLOAT _
+          DAYCOUNT ACTUAL360 BUSINESS_DAY NONE _
+          Delay 0  Dated 20170221  Next 20170521
+     1 * EURIBOR_3MO + 1.5
+     0     99999999
+!
+Tranche "D" MEZ_FLT ! PAID_DOWN_WHEN (TOTAL_PAYBACK_DUE("D#1") LT 0.01);
+   Block 49219896.00  FREQ Q FLOAT _
+          DAYCOUNT ACTUAL360 BUSINESS_DAY NONE _
+          Delay 0  Dated 20170221  Next 20170521
+     1 * EURIBOR_3MO + 1.5
+     0     99999999
+!
+Tranche "E" MEZ_FLT ! PAID_DOWN_WHEN (TOTAL_PAYBACK_DUE("E#1") LT 0.01);
+   Block 76906087.00  FREQ Q FLOAT _
+          DAYCOUNT ACTUAL360 BUSINESS_DAY NONE _
+          Delay 0  Dated 20170221  Next 20170521
+     1 * EURIBOR_3MO + 1.5
+     0     99999999
+!
+Tranche "F" MEZ_FLT ! PAID_DOWN_WHEN (TOTAL_PAYBACK_DUE("F#1") LT 0.01);
+   Block 15381217.00  FREQ Q FLOAT _
+          DAYCOUNT ACTUAL360 BUSINESS_DAY NONE _
+          Delay 0  Dated 20170221  Next 20170521
+     1 * EURIBOR_3MO + 1.5
+     0     99999999
+!
+Tranche "Z" JUN_FIX ! PAID_DOWN_WHEN (TOTAL_PAYBACK_DUE("Z#1") LT 0.01);
+   Block 95363548.00 at 5  FREQ Q _
+          DAYCOUNT 30360 BUSINESS_DAY NONE _
+          Delay 0  Dated 20170221  Next 20170521
+!
+Tranche "R" JUN_RES
+   Block 615248694.79 at 0 NOTIONAL WITH GROUP 0 SURPLUS _
+         DAYCOUNT 30360 BUSINESS_DAY NONE _
+         FREQ Q   Delay 0  Dated 20170221  Next 20170521
+!
+DEFINE PSEUDO_TRANCHE COLLAT _
+   Delay 20 Dated 20170201 Next 20170321 Settle 20170221
+!
+  RESERVE_FUND "LRF" _
+               ON TRANCHE "A" _
+     FULL_NAME "LRF" _
+               COVERS RULES RULES _
+               COVERS INTEREST SHORTFALLS _
+               EXCESS_RELEASE_WHEN ( 0 ); _
+               BALANCE_CAP ( #SpecAcctBal ); _
+               FUNDING_FROM RULES _
+               STARTING_BALANCE (3%*ORIG_BBAL("A#1")); _ 
+               REINVEST_AT AS_COLLECTION  
+!
+  RESERVE_FUND "GRF" _
+               ON TRANCHE "A"&"B"&"C"&"D"&"E"&"F" _
+     FULL_NAME "GRF" _
+               COVERS RULES RULES _
+               COVERS INTEREST SHORTFALLS _
+               EXCESS_RELEASE_WHEN ( 0 ); _
+               BALANCE_CAP ( #SpecAcctBal2 ); _
+               FUNDING_FROM RULES _
+               STARTING_BALANCE  10151603.46   _ 
+               REINVEST_AT AS_COLLECTION  
+!
+  HEDGE     "Cap" _
+                     FULL_NAME "Cap" _
+                     TYPE  CAP _
+                     COVERS  INT_COLLECTION _
+                     BALANCE NOTIONAL WITH TRANCHE "CAP_IN" _
+                     LEG   "FLT"         DEAL_RECEIVES   OPTIMAL_INTPMT  "CAP_IN" _
+                     STARTDATE 20170521 _
+                     ENDDATE   20780921
+!
+
+  DEFINE DYNAMIC STICKY #30360Adj_Fees = 90 / 360
+  EXPENSE "Fees"                  = (0.40% * ( COLL_PREV_BAL ) * #30360Adj_Fees + 90000 / 4);
+!
+  CLASS "RESID"    NO_BUILD_TRANCHE _
+                    = "R#1" 
+  CLASS "A"         NO_BUILD_TRANCHE _
+                    = "A"
+  CLASS "B"         NO_BUILD_TRANCHE _
+                    = "B"
+  CLASS "C"         NO_BUILD_TRANCHE _
+                    = "C"
+  CLASS "D"         NO_BUILD_TRANCHE _
+                    = "D"
+  CLASS "E"         NO_BUILD_TRANCHE _
+                    = "E"
+  CLASS "F"         NO_BUILD_TRANCHE _
+                    = "F"
+  CLASS "Z"         NO_BUILD_TRANCHE _
+                    = "Z"
+!
+!
+  CLASS "ROOT" _
+                 WRITEDOWN_BAL RULES _
+                 DISTRIB_CLASS RULES _
+                 SHORTFALL_EARN_INT INTEREST TRUE _
+                   = "A" "B" "C" "D" "E" "F" "Z"  "RESID"
+!
+  CROSSOVER When 0
+!
+!
+ INTEREST_SHORTFALL           FULL_PREPAY    Compensate Pro_rata _
+                              PARTIAL_PREPAY Compensate Pro_rata _
+                              LOSS           NO_Compensate SUBORDINATED ACCUM
+!
+ DEFINE MACRO BLOCK #A_Prn =
+{
+------------------------------------
+        from :  CLASS ( "A" )
+         pay :  SEQUENTIAL ( "A#1" )
+------------------------------------
+}
+!
+ DEFINE MACRO BLOCK #B_Prn =
+{
+------------------------------------
+        from :  CLASS ( "B" )
+         pay :  SEQUENTIAL ( "B#1" )
+------------------------------------
+}
+!
+ DEFINE MACRO BLOCK #C_Prn =
+{
+------------------------------------
+        from :  CLASS ( "C" )
+         pay :  SEQUENTIAL ( "C#1" )
+------------------------------------
+}
+!
+ DEFINE MACRO BLOCK #D_Prn =
+{
+------------------------------------
+        from :  CLASS ( "D" )
+         pay :  SEQUENTIAL ( "D#1" )
+------------------------------------
+}
+!
+ DEFINE MACRO BLOCK #E_Prn =
+{
+------------------------------------
+        from :  CLASS ( "E" )
+         pay :  SEQUENTIAL ( "E#1" )
+------------------------------------
+}
+!
+ DEFINE MACRO BLOCK #F_Prn =
+{
+------------------------------------
+        from :  CLASS ( "F" )
+         pay :  SEQUENTIAL ( "F#1" )
+------------------------------------
+}
+!
+ DEFINE MACRO BLOCK #Z_Prn =
+{
+------------------------------------
+        from :  CLASS ( "Z" )
+         pay :  SEQUENTIAL ( "Z#1" )
+------------------------------------
+}
+!
+ DEFINE DYNAMIC STICKY   #InitAcctBal  = 3%*BBAL("A")
+ DEFINE DYNAMIC SLIPPERY #SpecAcctFund = MAX( 0, #SpecAcctBal - CREDIT_ENHANCEMENT ( "LRF" ) )
+ DEFINE DYNAMIC SLIPPERY #SpecAcctRelease = MAX( 0, CREDIT_ENHANCEMENT ( "LRF" ) - #SpecAcctBal )
+!
+ DEFINE DYNAMIC STICKY   #InitAcctBal2  = 3% * ORIG_BBAL("A","B","C","D","E","F","Z")  - #SpecAcctBal
+ DEFINE DYNAMIC SLIPPERY #SpecAcctFund2 = MAX( 0, #SpecAcctBal2 - CREDIT_ENHANCEMENT ( "GRF" ) )
+ DEFINE DYNAMIC SLIPPERY #SpecAcctRelease2 = MAX( 0, CREDIT_ENHANCEMENT ( "GRF" ) - #SpecAcctBal2 )
+!
+ DEFINE MACRO BLOCK #PDL_CALC = 
+{
+   calculate : #Z_PDL           = MIN(BBAL("Z"), #PDL)
+   calculate : #F_PDL           = MIN(BBAL("F"), #PDL - #Z_PDL)
+   calculate : #E_PDL           = MIN(BBAL("E"), #PDL - #Z_PDL - #F_PDL)
+   calculate : #D_PDL           = MIN(BBAL("D"), #PDL - #Z_PDL - #F_PDL - #E_PDL)
+   calculate : #C_PDL           = MIN(BBAL("C"), #PDL - #Z_PDL - #F_PDL - #E_PDL - #D_PDL)
+   calculate : #B_PDL           = MIN(BBAL("B"), #PDL - #Z_PDL - #F_PDL - #E_PDL - #D_PDL - #C_PDL)
+   calculate : #A_PDL           = MIN(BBAL("A"), #PDL - #Z_PDL - #F_PDL - #E_PDL - #D_PDL - #C_PDL - #B_PDL)
+}
+!
+!
+ CMO Block Payment Rules
+------------------------------------
+   calculate :  #Note_Balance        = BBAL("A","B","C","D","E","F","Z")
+!
+   calculate :  #Coll_I              = COLL_I + CF_REINV_INCOME
+   calculate :  #Coll_P              = COLL_P
+------------------------------------
+------------------------------------
+   calculate : #HedgePaySave = 0.00
+------------------------------------
+        from :  HEDGE ("Cap")
+pay(#Coll_I) :  CASH_ACCOUNT(0)
+------------------------------------
+   calculate : #PDL             = #PDL + #Current_PDL_Adj 
+  {#PDL_CALC}
+------------------------------------
+   calculate :  #Coll_I_Mod          = 0.00 + CF_REINV_INCOME + HEDGE("Cap","ACTUAL_PMT")
+   calculate :  #XSSpread_Mod        = 0.00
+------------------------------------
+   calculate :  #XSSpread            = #Coll_I - CAPPED_OPTIMAL_INTPMT("A#1","B#1","C#1","D#1","E#1","F#1","Z#1") - INTSHORT_ACCUM("A#1","B#1","C#1","D#1","E#1","F#1","Z#1") - EXPENSE("Fees") + #XSSpread_Mod
+   calculate :  #XSRate              = 400 * #XSSpread / COLL_PREV_BAL
+------------------------------------
+!
+  calculate :  "A" _
+ NO_CHECK  CUSTOM   AMOUNT        = 0
+!
+------------------------------------
+!
+------------------------------------  Pay Reserve Fund GRF  From Fund LRF (Excess)
+   calculate :  #StepSprReq          = BBAL("A#1") * 3%
+   calculate :  #FloorFixed          = 0
+   calculate :  #FloorSprReq         = #FloorFixed
+   calculate :  #SpecAcctBal         = IF ( 1 ) _ 
+                                       THEN MAX( MIN( #InitAcctBal, #StepSprReq ), #FloorSprReq ) _
+                                       ELSE MAX(  #InitAcctBal, #FloorSprReq )
+   calculate :  #SpecAcctBal         = IF COLL_BAL < 0.01 THEN 0 ELSE #SpecAcctBal
+!
+
+------------------------------------
+   calculate :  #StepSprReq2         = 3% * ORIG_BBAL("A","B","C","D","E","F","Z")  - #SpecAcctBal
+   calculate :  #SpecAcctBal2        = IF ( 1 ) _ 
+                                       THEN MIN( #InitAcctBal2, #StepSprReq2 ) _
+                                       ELSE #InitAcctBal2
+   calculate :  #SpecAcctBal2        = IF BBAL("A#1", "B#1", "C#1", "D#1", "E#1", "F#1") - MAX(0, COLL_P - PRINCPMT("A#1", "B#1", "C#1", "D#1", "E#1", "F#1")) < 0.01 THEN 0 ELSE #SpecAcctBal2
+   calculate :  #SpecAcctBal2        = IF COLL_BAL < 0.01 THEN 0 ELSE #SpecAcctBal2
+!
+------------------------------------
+        from :  CREDIT_ENHANCEMENT ("LRF")
+  subject to :  CEILING ( #SpecAcctRelease )
+  subject to :  CEILING ( (#SpecAcctFund2) )
+         pay :  CREDIT_ENHANCEMENT ( "GRF" )
+------------------------------------
+!
+------------------------------------  Pay to Interest From Fund GRF
+        from :  CREDIT_ENHANCEMENT ("GRF")
+pay(#Coll_I) :  CLASS MORE_INTEREST   SEQUENTIAL ( "ROOT" )
+------------------------------------
+!
+------------------------------------  Pay Expense Fees  From Int
+        from :  SUBACCOUNT ( #Coll_I, CLASS "ROOT")
+         pay :  EXPENSE ( "Fees" )
+------------------------------------
+!
+------------------------------------  Pay Expense Fees  From Fund LRF
+        from :  CREDIT_ENHANCEMENT ("LRF")
+         pay :  EXPENSE ( "Fees" )
+------------------------------------
+!
+------------------------------------  Pay Interest to A  From Int
+        from :  SUBACCOUNT ( #Coll_I, CLASS "ROOT")
+         pay :  CLASS INTEREST  SEQUENTIAL  ( "A" )
+         pay :  CLASS INTSHORT  SEQUENTIAL  ( "A" )
+------------------------------------
+!
+------------------------------------  Pay Interest to A  From Fund LRF
+        from :  CREDIT_ENHANCEMENT ("LRF")
+         pay :  CLASS INTEREST  SEQUENTIAL  ( "A" )
+         pay :  CLASS INTSHORT  SEQUENTIAL  ( "A" )
+------------------------------------
+!
+------------------------------------  Pay PDL A  From Int
+   calculate : #ATransfer           = MIN( #A_PDL, #Coll_I )
+------------------------------------
+        from :  SUBACCOUNT ( #A_PDL, #PDL, #Coll_I, CLASS "ROOT")
+  subject to :  CEILING( #ATransfer )
+pay(#Coll_P) :  CLASS MORE_INTEREST SEQUENTIAL ( "ROOT" )
+------------------------------------
+!
+------------------------------------  Pay Interest to B  From Int
+        from :  SUBACCOUNT ( #Coll_I, CLASS "ROOT")
+         pay :  CLASS INTEREST  SEQUENTIAL  ( "B" )
+         pay :  CLASS INTSHORT  SEQUENTIAL  ( "B" )
+------------------------------------
+!
+------------------------------------  Pay PDL B  From Int
+   calculate : #BTransfer           = MIN( #B_PDL, #Coll_I )
+------------------------------------
+        from :  SUBACCOUNT ( #B_PDL, #PDL, #Coll_I, CLASS "ROOT")
+  subject to :  CEILING( #BTransfer )
+pay(#Coll_P) :  CLASS MORE_INTEREST SEQUENTIAL ( "ROOT" )
+------------------------------------
+!
+------------------------------------  Pay Interest to C  From Int
+        from :  SUBACCOUNT ( #Coll_I, CLASS "ROOT")
+         pay :  CLASS INTEREST  SEQUENTIAL  ( "C" )
+         pay :  CLASS INTSHORT  SEQUENTIAL  ( "C" )
+------------------------------------
+!
+------------------------------------  Pay PDL C  From Int
+   calculate : #CTransfer           = MIN( #C_PDL, #Coll_I )
+------------------------------------
+        from :  SUBACCOUNT ( #C_PDL, #PDL, #Coll_I, CLASS "ROOT")
+  subject to :  CEILING( #CTransfer )
+pay(#Coll_P) :  CLASS MORE_INTEREST SEQUENTIAL ( "ROOT" )
+------------------------------------
+!
+------------------------------------  Pay Interest to D  From Int
+        from :  SUBACCOUNT ( #Coll_I, CLASS "ROOT")
+         pay :  CLASS INTEREST  SEQUENTIAL  ( "D" )
+         pay :  CLASS INTSHORT  SEQUENTIAL  ( "D" )
+------------------------------------
+!
+------------------------------------  Pay PDL D  From Int
+   calculate : #DTransfer           = MIN( #D_PDL, #Coll_I )
+------------------------------------
+        from :  SUBACCOUNT ( #D_PDL, #PDL, #Coll_I, CLASS "ROOT")
+  subject to :  CEILING( #DTransfer )
+pay(#Coll_P) :  CLASS MORE_INTEREST SEQUENTIAL ( "ROOT" )
+------------------------------------
+!
+------------------------------------  Pay Interest to E  From Int
+        from :  SUBACCOUNT ( #Coll_I, CLASS "ROOT")
+         pay :  CLASS INTEREST  SEQUENTIAL  ( "E" )
+         pay :  CLASS INTSHORT  SEQUENTIAL  ( "E" )
+------------------------------------
+!
+------------------------------------  Pay PDL E  From Int
+   calculate : #ETransfer           = MIN( #E_PDL, #Coll_I )
+------------------------------------
+        from :  SUBACCOUNT ( #E_PDL, #PDL, #Coll_I, CLASS "ROOT")
+  subject to :  CEILING( #ETransfer )
+pay(#Coll_P) :  CLASS MORE_INTEREST SEQUENTIAL ( "ROOT" )
+------------------------------------
+!
+------------------------------------  Pay Interest to F  From Int
+        from :  SUBACCOUNT ( #Coll_I, CLASS "ROOT")
+         pay :  CLASS INTEREST  SEQUENTIAL  ( "F" )
+         pay :  CLASS INTSHORT  SEQUENTIAL  ( "F" )
+------------------------------------
+!
+------------------------------------  Pay PDL F  From Int
+   calculate : #FTransfer           = MIN( #F_PDL, #Coll_I )
+------------------------------------
+        from :  SUBACCOUNT ( #F_PDL, #PDL, #Coll_I, CLASS "ROOT")
+  subject to :  CEILING( #FTransfer )
+pay(#Coll_P) :  CLASS MORE_INTEREST SEQUENTIAL ( "ROOT" )
+------------------------------------
+!
+------------------------------------  Pay Reserve Fund LRF  From Int
+   calculate :  #StepSprReq          = BBAL("A#1") * 3%
+   calculate :  #FloorFixed          = 0
+   calculate :  #FloorSprReq         = #FloorFixed
+   calculate :  #SpecAcctBal         = IF ( 1 ) _ 
+                                       THEN MAX( MIN( #InitAcctBal, #StepSprReq ), #FloorSprReq ) _
+                                       ELSE MAX(  #InitAcctBal, #FloorSprReq )
+   calculate :  #SpecAcctBal         = IF COLL_BAL < 0.01 THEN 0 ELSE #SpecAcctBal
+!
+------------------------------------
+        from :  SUBACCOUNT ( #Coll_I, CLASS "ROOT")
+  subject to :  CEILING ( (#SpecAcctFund) )
+         pay :  CREDIT_ENHANCEMENT ( "LRF" )
+------------------------------------
+!
+------------------------------------  Pay Reserve Fund LRF  From Princ
+   calculate :  #StepSprReq          = BBAL("A#1") * 3%
+   calculate :  #FloorFixed          = 0
+   calculate :  #FloorSprReq         = #FloorFixed
+   calculate :  #SpecAcctBal         = IF ( 1 ) _ 
+                                       THEN MAX( MIN( #InitAcctBal, #StepSprReq ), #FloorSprReq ) _
+                                       ELSE MAX(  #InitAcctBal, #FloorSprReq )
+   calculate :  #SpecAcctBal         = IF COLL_BAL < 0.01 THEN 0 ELSE #SpecAcctBal
+!
+------------------------------------
+        from :  SUBACCOUNT ( #Coll_P, CLASS "ROOT")
+  subject to :  CEILING ( (#SpecAcctFund) )
+   pay(#PDL) :  CREDIT_ENHANCEMENT ( "LRF" )
+------------------------------------
+  {#PDL_CALC}
+------------------------------------
+!
+------------------------------------  Pay Reserve Fund GRF  From Int
+   calculate :  #StepSprReq2         = 3% * ORIG_BBAL("A","B","C","D","E","F","Z")  - #SpecAcctBal
+   calculate :  #SpecAcctBal2        = IF ( 1 ) _ 
+                                       THEN MIN( #InitAcctBal2, #StepSprReq2 ) _
+                                       ELSE #InitAcctBal2
+   calculate :  #SpecAcctBal2        = IF BBAL("A#1", "B#1", "C#1", "D#1", "E#1", "F#1") - MAX(0, COLL_P - PRINCPMT("A#1", "B#1", "C#1", "D#1", "E#1", "F#1")) < 0.01 THEN 0 ELSE #SpecAcctBal2
+   calculate :  #SpecAcctBal2        = IF COLL_BAL < 0.01 THEN 0 ELSE #SpecAcctBal2
+!
+------------------------------------
+        from :  SUBACCOUNT ( #Coll_I, CLASS "ROOT")
+  subject to :  CEILING ( (#SpecAcctFund2) )
+         pay :  CREDIT_ENHANCEMENT ( "GRF" )
+------------------------------------
+!
+------------------------------------  Pay PDL Z  From Int
+   calculate : #ZTransfer           = MIN( #Z_PDL, #Coll_I )
+------------------------------------
+        from :  SUBACCOUNT ( #Z_PDL, #PDL, #Coll_I, CLASS "ROOT")
+  subject to :  CEILING( #ZTransfer )
+pay(#Coll_P) :  CLASS MORE_INTEREST SEQUENTIAL ( "ROOT" )
+------------------------------------
+!
+------------------------------------  Pay Interest to Z  From Int
+        from :  SUBACCOUNT ( #Coll_I, CLASS "ROOT")
+         pay :  CLASS INTEREST  SEQUENTIAL  ( "Z" )
+         pay :  CLASS INTSHORT  SEQUENTIAL  ( "Z" )
+------------------------------------
+!
+------------------------------------  Pay Additional Interest to R  From Int
+        from :  SUBACCOUNT ( #Coll_I, CLASS "ROOT")
+         pay :  MORE_INTEREST SEQUENTIAL ( "R#1" )
+------------------------------------
+!
+------------------------------------  Pay Interest to A  From Princ
+        from :  SUBACCOUNT ( #Coll_P, CLASS "ROOT")
+   pay(#PDL) :  CLASS INTEREST  SEQUENTIAL  ( "A" )
+   pay(#PDL) :  CLASS INTSHORT  SEQUENTIAL  ( "A" )
+------------------------------------
+  {#PDL_CALC}
+------------------------------------
+!
+------------------------------------  Pay Interest to B  From Princ
+        when :  IS_TRUE ( BBAL ("A") LT 0.01 )
+        from :  SUBACCOUNT ( #Coll_P, CLASS "ROOT")
+   pay(#PDL) :  CLASS INTEREST  SEQUENTIAL  ( "B" )
+   pay(#PDL) :  CLASS INTSHORT  SEQUENTIAL  ( "B" )
+------------------------------------
+  {#PDL_CALC}
+------------------------------------
+!
+------------------------------------  Pay Interest to C  From Princ
+        when :  IS_TRUE ( BBAL ("B") LT 0.01 )
+        from :  SUBACCOUNT ( #Coll_P, CLASS "ROOT")
+   pay(#PDL) :  CLASS INTEREST  SEQUENTIAL  ( "C" )
+   pay(#PDL) :  CLASS INTSHORT  SEQUENTIAL  ( "C" )
+------------------------------------
+  {#PDL_CALC}
+------------------------------------
+!
+------------------------------------  Pay Interest to D  From Princ
+        when :  IS_TRUE ( BBAL ("C") LT 0.01 )
+        from :  SUBACCOUNT ( #Coll_P, CLASS "ROOT")
+   pay(#PDL) :  CLASS INTEREST  SEQUENTIAL  ( "D" )
+   pay(#PDL) :  CLASS INTSHORT  SEQUENTIAL  ( "D" )
+------------------------------------
+  {#PDL_CALC}
+------------------------------------
+!
+------------------------------------  Pay Interest to E  From Princ
+        when :  IS_TRUE ( BBAL ("D") LT 0.01 )
+        from :  SUBACCOUNT ( #Coll_P, CLASS "ROOT")
+   pay(#PDL) :  CLASS INTEREST  SEQUENTIAL  ( "E" )
+   pay(#PDL) :  CLASS INTSHORT  SEQUENTIAL  ( "E" )
+------------------------------------
+  {#PDL_CALC}
+------------------------------------
+!
+------------------------------------  Pay Interest to F  From Princ
+        when :  IS_TRUE ( BBAL ("E") LT 0.01 )
+        from :  SUBACCOUNT ( #Coll_P, CLASS "ROOT")
+   pay(#PDL) :  CLASS INTEREST  SEQUENTIAL  ( "F" )
+   pay(#PDL) :  CLASS INTSHORT  SEQUENTIAL  ( "F" )
+------------------------------------
+  {#PDL_CALC}
+------------------------------------
+!
+------------------------------------  Pay Principal to A  From Princ
+        from :  SUBACCOUNT ( #Coll_P, CLASS "ROOT")
+         pay :  CLASS BALANCE   SEQUENTIAL  ( "A" )
+------------------------------------
+  {#A_Prn}
+------------------------------------
+!
+------------------------------------  Pay Principal to B  From Princ
+        from :  SUBACCOUNT ( #Coll_P, CLASS "ROOT")
+         pay :  CLASS BALANCE   SEQUENTIAL  ( "B" )
+------------------------------------
+  {#B_Prn}
+------------------------------------
+!
+------------------------------------  Pay Principal to C  From Princ
+        from :  SUBACCOUNT ( #Coll_P, CLASS "ROOT")
+         pay :  CLASS BALANCE   SEQUENTIAL  ( "C" )
+------------------------------------
+  {#C_Prn}
+------------------------------------
+!
+------------------------------------  Pay Principal to D  From Princ
+        from :  SUBACCOUNT ( #Coll_P, CLASS "ROOT")
+         pay :  CLASS BALANCE   SEQUENTIAL  ( "D" )
+------------------------------------
+  {#D_Prn}
+------------------------------------
+!
+------------------------------------  Pay Principal to E  From Princ
+        from :  SUBACCOUNT ( #Coll_P, CLASS "ROOT")
+         pay :  CLASS BALANCE   SEQUENTIAL  ( "E" )
+------------------------------------
+  {#E_Prn}
+------------------------------------
+!
+------------------------------------  Pay Principal to F  From Princ
+        from :  SUBACCOUNT ( #Coll_P, CLASS "ROOT")
+         pay :  CLASS BALANCE   SEQUENTIAL  ( "F" )
+------------------------------------
+  {#F_Prn}
+------------------------------------
+!
+------------------------------------  Pay Principal to F  From Fund GRF
+        when :  IS_TRUE ( CREDIT_ENHANCEMENT("GRF") GE BBAL("A","B","C","D","E","F") )
+        from :  CREDIT_ENHANCEMENT ("GRF")
+         pay :  CLASS BALANCE   SEQUENTIAL  ( "F" )
+------------------------------------
+  {#F_Prn}
+------------------------------------
+!
+------------------------------------  Pay Principal to Z  From Princ
+        from :  SUBACCOUNT ( #Coll_P, CLASS "ROOT")
+         pay :  CLASS BALANCE   SEQUENTIAL  ( "Z" )
+------------------------------------
+  {#Z_Prn}
+------------------------------------
+!
+------------------------------------  Pay Additional Interest to R  From Princ
+        from :  SUBACCOUNT ( #Coll_P, CLASS "ROOT")
+   pay(#PDL) :  MORE_INTEREST SEQUENTIAL ( "R#1" )
+------------------------------------
+  {#PDL_CALC}
+------------------------------------
+        from :  CLASS ( "ROOT" )
+         pay :  AS_INTEREST ("R#1")
+------------------------------------
+!
+ Collateral
+!
+!       Factor      --Delay--
+! Type   Date       P/Y    BV   Use BV for 0
+  WL  20170201    9999 9999   FALSE
+!
+! Pool#  Type     Gross     Current     Original   --Fee--  Maturity Orig  ARM            Gross  #mos  #mos   P#mos  P#mos  Life   Reset Life   Max   Look
+!                 Coupon    Factor      Balance    P/Y  BV  P/Y   BV Term  Index          Margin ToRst RstPer ToRst  RstPer Cap    Cap   Floor  Negam Back
+!! BEGINNING OF COLLATERAL
+M        1     "ECB Base Rate IO"               WL    00    WAC   1.14075356590822 (     39355125.38 /     39355125.38 );     39355125.38                              0.           0.                64:0      64:0        64 NO_CHECK BALLOON SCHED_BOTH            32 AMORT NONE FOR          32 ARM ECB                   1.1407535659       2    1 SYNC_INT              999             999               0         0      0                              ORIG_GROSSRATE 1.14075356590822  TEASER                   
+M        2     "ECB Base Rate REP"              WL    00    WAC   1.18547326419084 (      4272609.23 /      4272609.23 );      4272609.23                              0.           0.                39:0      39:0        39 NO_CHECK                                                             ARM ECB                   1.1854732642       2    1 SYNC_INT              999             999               0         0      0                              ORIG_GROSSRATE 1.18547326419084  TEASER                   
+M        3     "ECB Base Rate IO"               WL    00    WAC   1.17713447558412 (     59652801.23 /     59652801.23 );     59652801.23                              0.           0.               188:0     188:0       188 NO_CHECK BALLOON SCHED_BOTH            94 AMORT NONE FOR          94 ARM ECB                   1.1771344756       2    1 SYNC_INT              999             999               0         0      0                              ORIG_GROSSRATE 1.17713447558412  TEASER                   
+M        4     "ECB Base Rate REP"              WL    00    WAC   1.13186441917327 (     17043094.04 /     17043094.04 );     17043094.04                              0.           0.                95:0      95:0        95 NO_CHECK                                                             ARM ECB                   1.1318644192       2    1 SYNC_INT              999             999               0         0      0                              ORIG_GROSSRATE 1.13186441917327  TEASER                   
+M        5     "ECB Base Rate IO"               WL    00    WAC   1.08348754405591 (     46756181.28 /     46756181.28 );     46756181.28                              0.           0.               298:0     298:0       298 NO_CHECK BALLOON SCHED_BOTH           149 AMORT NONE FOR         149 ARM ECB                   1.0834875441       2    1 SYNC_INT              999             999               0         0      0                              ORIG_GROSSRATE 1.08348754405591  TEASER                   
+M        6     "ECB Base Rate REP"              WL    00    WAC   1.16587426290571 (     34462017.15 /     34462017.15 );     34462017.15                              0.           0.               155:0     155:0       155 NO_CHECK                                                             ARM ECB                   1.1658742629       2    1 SYNC_INT              999             999               0         0      0                              ORIG_GROSSRATE 1.16587426290571  TEASER                   
+M        7     "ECB Base Rate IO"               WL    00    WAC   1.09319990751958 (     39920751.34 /     39920751.34 );     39920751.34                              0.           0.               418:0     418:0       418 NO_CHECK BALLOON SCHED_BOTH           209 AMORT NONE FOR         209 ARM ECB                   1.0931999075       2    1 SYNC_INT              999             999               0         0      0                              ORIG_GROSSRATE 1.09319990751958  TEASER                   
+M        8     "ECB Base Rate REP"              WL    00    WAC   1.14452445196161 (     40770380.14 /     40770380.14 );     40770380.14                              0.           0.               211:0     211:0       211 NO_CHECK                                                             ARM ECB                   1.1445244520       2    1 SYNC_INT              999             999               0         0      0                              ORIG_GROSSRATE 1.14452445196161  TEASER                   
+M        9     "ECB Base Rate IO"               WL    00    WAC   1.11050483930560 (     17519835.92 /     17519835.92 );     17519835.92                              0.           0.               526:0     526:0       526 NO_CHECK BALLOON SCHED_BOTH           263 AMORT NONE FOR         263 ARM ECB                   1.1105048393       2    1 SYNC_INT              999             999               0         0      0                              ORIG_GROSSRATE 1.11050483930560  TEASER                   
+M        10    "ECB Base Rate REP"              WL    00    WAC   1.20477891107824 (     45626365.49 /     45626365.49 );     45626365.49                              0.           0.               268:0     268:0       268 NO_CHECK                                                             ARM ECB                   1.2047789111       2    1 SYNC_INT              999             999               0         0      0                              ORIG_GROSSRATE 1.20477891107824  TEASER                   
+M        11    "ECB Base Rate IO"               WL    00    WAC   1.15925322646844 (      4391760.77 /      4391760.77 );      4391760.77                              0.           0.               652:0     652:0       652 NO_CHECK BALLOON SCHED_BOTH           326 AMORT NONE FOR         326 ARM ECB                   1.1592532265       2    1 SYNC_INT              999             999               0         0      0                              ORIG_GROSSRATE 1.15925322646844  TEASER                   
+M        12    "ECB Base Rate REP"              WL    00    WAC   1.31636014049369 (     37989381.31 /     37989381.31 );     37989381.31                              0.           0.               322:0     322:0       322 NO_CHECK                                                             ARM ECB                   1.3163601405       2    1 SYNC_INT              999             999               0         0      0                              ORIG_GROSSRATE 1.31636014049369  TEASER                   
+M        13    "ECB Base Rate IO"               WL    00    WAC   1.50000000000000 (       691920.24 /       691920.24 );       691920.24                              0.           0.               734:0     734:0       734 NO_CHECK BALLOON SCHED_BOTH           367 AMORT NONE FOR         367 ARM ECB                   1.5000000000       2    1 SYNC_INT              999             999               0         0      0                              ORIG_GROSSRATE 1.50000000000000  TEASER                   
+M        14    "ECB Base Rate REP"              WL    00    WAC   1.37321929335491 (     15416181.45 /     15416181.45 );     15416181.45                              0.           0.               375:0     375:0       375 NO_CHECK                                                             ARM ECB                   1.3732192934       2    1 SYNC_INT              999             999               0         0      0                              ORIG_GROSSRATE 1.37321929335491  TEASER                   
+M        15    "Fixed IO"                       WL    00    WAC   2.18126541368954 (       288469.22 /       288469.22 );       288469.22                              0.           0.                90:0      90:0        90 NO_CHECK BALLOON SCHED_BOTH            45 AMORT NONE FOR          45                                                                                                                                                                                                                  
+M        16    "Fixed IO"                       WL    00    WAC   2.22652215548955 (      2846017.23 /      2846017.23 );      2846017.23                              0.           0.               198:0     198:0       198 NO_CHECK BALLOON SCHED_BOTH            99 AMORT NONE FOR          99                                                                                                                                                                                                                  
+M        17    "Fixed IO"                       WL    00    WAC   2.19087954088011 (      5275557.97 /      5275557.97 );      5275557.97                              0.           0.               304:0     304:0       304 NO_CHECK BALLOON SCHED_BOTH           152 AMORT NONE FOR         152                                                                                                                                                                                                                  
+M        18    "Fixed IO"                       WL    00    WAC   2.21290705907142 (      8932377.83 /      8932377.83 );      8932377.83                              0.           0.               430:0     430:0       430 NO_CHECK BALLOON SCHED_BOTH           215 AMORT NONE FOR         215                                                                                                                                                                                                                  
+M        19    "Fixed IO"                       WL    00    WAC   2.19830682757742 (      8713897.24 /      8713897.24 );      8713897.24                              0.           0.               530:0     530:0       530 NO_CHECK BALLOON SCHED_BOTH           265 AMORT NONE FOR         265                                                                                                                                                                                                                  
+M        20    "Fixed REP"                      WL    00    WAC   2.83000000000000 (       234722.28 /       234722.28 );       234722.28                              0.           0.               256:0     256:0       256 NO_CHECK                                                                                                                                                                                                                                                                              
+M        21    "Fixed IO"                       WL    00    WAC   2.27983173582758 (      7761157.24 /      7761157.24 );      7761157.24                              0.           0.               644:0     644:0       644 NO_CHECK BALLOON SCHED_BOTH           322 AMORT NONE FOR         322                                                                                                                                                                                                                  
+M        22    "Fixed REP"                      WL    00    WAC   2.45000000000000 (       151369.82 /       151369.82 );       151369.82                              0.           0.               320:0     320:0       320 NO_CHECK                                                                                                                                                                                                                                                                              
+M        23    "Fixed IO"                       WL    00    WAC   2.25762989005834 (      9454299.78 /      9454299.78 );      9454299.78                              0.           0.               736:0     736:0       736 NO_CHECK BALLOON SCHED_BOTH           368 AMORT NONE FOR         368                                                                                                                                                                                                                  
+M        24    "Fixed REP"                      WL    00    WAC   2.48889666072752 (       317105.00 /       317105.00 );       317105.00                              0.           0.               371:0     371:0       371 NO_CHECK                                                                                                                                                                                                                                                                              
+M        25    "Standard Variable Rate IO"      WL    00    WAC   4.31672390533048 (      1788295.88 /      1788295.88 );      1788295.88                              0.           0.                70:0      70:0        70 NO_CHECK BALLOON SCHED_BOTH            35 AMORT NONE FOR          35 ARM EURIBOR_3MO                    2.5       2    1 SYNC_INT              999             999               0         0      0                              ORIG_GROSSRATE 4.31672390533048  TEASER                   
+M        26    "Standard Variable Rate REP"     WL    00    WAC   4.69269574362589 (       323961.89 /       323961.89 );       323961.89                              0.           0.                48:0      48:0        48 NO_CHECK                                                             ARM EURIBOR_3MO                    2.5       2    1 SYNC_INT              999             999               0         0      0                              ORIG_GROSSRATE 4.69269574362589  TEASER                   
+M        27    "Standard Variable Rate IO"      WL    00    WAC   4.19138587762396 (      5812481.68 /      5812481.68 );      5812481.68                              0.           0.               182:0     182:0       182 NO_CHECK BALLOON SCHED_BOTH            91 AMORT NONE FOR          91 ARM EURIBOR_3MO                    2.5       2    1 SYNC_INT              999             999               0         0      0                              ORIG_GROSSRATE 4.19138587762396  TEASER                   
+M        28    "Standard Variable Rate REP"     WL    00    WAC   4.26073591508283 (      2587153.66 /      2587153.66 );      2587153.66                              0.           0.               100:0     100:0       100 NO_CHECK                                                             ARM EURIBOR_3MO                    2.5       2    1 SYNC_INT              999             999               0         0      0                              ORIG_GROSSRATE 4.26073591508283  TEASER                   
+M        29    "Standard Variable Rate IO"      WL    00    WAC   3.69553358382077 (      8734859.77 /      8734859.77 );      8734859.77                              0.           0.               298:0     298:0       298 NO_CHECK BALLOON SCHED_BOTH           149 AMORT NONE FOR         149 ARM EURIBOR_3MO                    2.5       2    1 SYNC_INT              999             999               0         0      0                              ORIG_GROSSRATE 3.69553358382077  TEASER                   
+M        30    "Standard Variable Rate REP"     WL    00    WAC   4.57756994370554 (      6691687.57 /      6691687.57 );      6691687.57                              0.           0.               151:0     151:0       151 NO_CHECK                                                             ARM EURIBOR_3MO                    2.5       2    1 SYNC_INT              999             999               0         0      0                              ORIG_GROSSRATE 4.57756994370554  TEASER                   
+M        31    "Standard Variable Rate IO"      WL    00    WAC   3.81360576317576 (     15055399.94 /     15055399.94 );     15055399.94                              0.           0.               412:0     412:0       412 NO_CHECK BALLOON SCHED_BOTH           206 AMORT NONE FOR         206 ARM EURIBOR_3MO                    2.5       2    1 SYNC_INT              999             999               0         0      0                              ORIG_GROSSRATE 3.81360576317576  TEASER                   
+M        32    "Standard Variable Rate REP"     WL    00    WAC   4.42056215090393 (     12953473.79 /     12953473.79 );     12953473.79                              0.           0.               212:0     212:0       212 NO_CHECK                                                             ARM EURIBOR_3MO                    2.5       2    1 SYNC_INT              999             999               0         0      0                              ORIG_GROSSRATE 4.42056215090393  TEASER                   
+M        33    "Standard Variable Rate IO"      WL    00    WAC   3.88885647778270 (     17014108.17 /     17014108.17 );     17014108.17                              0.           0.               518:0     518:0       518 NO_CHECK BALLOON SCHED_BOTH           259 AMORT NONE FOR         259 ARM EURIBOR_3MO                    2.5       2    1 SYNC_INT              999             999               0         0      0                              ORIG_GROSSRATE 3.88885647778270  TEASER                   
+M        34    "Standard Variable Rate REP"     WL    00    WAC   4.60242349724417 (     21311224.77 /     21311224.77 );     21311224.77                              0.           0.               266:0     266:0       266 NO_CHECK                                                             ARM EURIBOR_3MO                    2.5       2    1 SYNC_INT              999             999               0         0      0                              ORIG_GROSSRATE 4.60242349724417  TEASER                   
+M        35    "Standard Variable Rate IO"      WL    00    WAC   4.12294058071541 (     10245898.52 /     10245898.52 );     10245898.52                              0.           0.               650:0     650:0       650 NO_CHECK BALLOON SCHED_BOTH           325 AMORT NONE FOR         325 ARM EURIBOR_3MO                    2.5       2    1 SYNC_INT              999             999               0         0      0                              ORIG_GROSSRATE 4.12294058071541  TEASER                   
+M        36    "Standard Variable Rate REP"     WL    00    WAC   4.40448784495756 (     24619086.81 /     24619086.81 );     24619086.81                              0.           0.               325:0     325:0       325 NO_CHECK                                                             ARM EURIBOR_3MO                    2.5       2    1 SYNC_INT              999             999               0         0      0                              ORIG_GROSSRATE 4.40448784495756  TEASER                   
+M        37    "Standard Variable Rate IO"      WL    00    WAC   4.17383550339003 (      7142587.56 /      7142587.56 );      7142587.56                              0.           0.               736:0     736:0       736 NO_CHECK BALLOON SCHED_BOTH           368 AMORT NONE FOR         368 ARM EURIBOR_3MO                    2.5       2    1 SYNC_INT              999             999               0         0      0                              ORIG_GROSSRATE 4.17383550339003  TEASER                   
+M        38    "Standard Variable Rate REP"     WL    00    WAC   4.51189712243009 (     33125096.20 /     33125096.20 );     33125096.20                              0.           0.               368:0     368:0       368 NO_CHECK                                                             ARM EURIBOR_3MO                    2.5       2    1 SYNC_INT              999             999               0         0      0                              ORIG_GROSSRATE 4.51189712243009  TEASER                   
